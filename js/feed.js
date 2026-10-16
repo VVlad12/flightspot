@@ -50,7 +50,11 @@ export function liveFetcher(base) {
     const nm = Math.min(250, Math.ceil(rangeKm / 1.852));
     const url = `${base.replace(/\/$/, '')}/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/${nm}`;
     const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
+    if (!res.ok) {
+      // The FlightSpot proxy explains failures as {"error": "..."}.
+      const why = await res.json().then((j) => j.error, () => null);
+      throw new Error(why || `Feed HTTP ${res.status}${res.status === 429 ? ' (rate-limited, retrying)' : ''}`);
+    }
     return parseResponse(await res.json());
   };
 }

@@ -36,8 +36,8 @@ The free feeds ([adsb.lol](https://adsb.lol), [adsb.fi](https://adsb.fi)) don't 
 so a web page can't call them directly. The app calls `{Feed URL}/v2/point/{lat}/{lon}/{radius_nm}`
 through a small proxy:
 
-- **Local dev server**: `node serve.mjs` proxies `/adsb/...` to adsb.lol. On localhost the feed URL
-  defaults to `/adsb`, so live data works without any setup.
+- **Local dev server**: `node serve.mjs` answers `/adsb/...` by running `proxy/worker.js` itself, so
+  it behaves exactly like the deployed Worker. On localhost the feed URL defaults to `/adsb`.
 - **On the phone (GitHub Pages)**: deploy `proxy/worker.js` as a Cloudflare Worker (free plan):
   1. Cloudflare dashboard → Workers & Pages → Create → Worker → paste `proxy/worker.js` → Deploy.
   2. Optional: set `ALLOW_ORIGIN` to your Pages origin, `https://vvlad12.github.io`.
@@ -48,8 +48,13 @@ through a small proxy:
   Chrome's `chrome://inspect` → Port forwarding `8001 → localhost:8001`. On the phone,
   `http://localhost:8001` counts as secure, so the camera and sensors work and `/adsb` is proxied.
 
-adsb.lol answers `429 Too Many Requests` if it is polled too often. The app then waits 15 s
-before trying again. adsb.lol data is under the ODbL licence.
+Workers share their outgoing IP addresses, and adsb.lol often rate-limits them (`429 Too Many
+Requests`). The Worker then asks adsb.fi instead; the `X-Upstream` response header says which feed
+answered. If both refuse, the Worker returns `502` with the reasons, the app shows them and waits
+15 s before trying again. adsb.lol data is under the ODbL licence.
+
+To deploy from the command line instead of the dashboard: `cd proxy`, `npx wrangler login`,
+`npx wrangler deploy` (uses `proxy/wrangler.toml`).
 
 ## Using it on the phone
 

@@ -7,7 +7,7 @@ import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
