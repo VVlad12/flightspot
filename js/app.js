@@ -7,7 +7,7 @@ import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.1.1';
+export const VERSION = '0.1.2';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -257,7 +257,7 @@ function updateSensorWarning() {
 function updateStatus() {
   if (!state.mode) return;
   const n = state.items.length;
-  const src = state.source === 'sim' ? 'simulated' : hostOf(feedUrl());
+  const src = state.source === 'sim' ? 'simulated' : hostOf(feedUrl()) + (traffic.upstream ? ` → ${traffic.upstream}` : '');
   const ago = traffic.lastOk ? `${Math.round((Date.now() - traffic.lastOk) / 1000)} s ago` : 'no data yet';
   $('statusMain').textContent = traffic.lastOk ? `${n} plane${n === 1 ? '' : 's'} within ${settings.maxRange} km` : 'Waiting for traffic…';
   $('statusSub').textContent = traffic.lastError ? `${src} · ${traffic.lastError}` : `${src} · updated ${ago}`;

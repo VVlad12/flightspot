@@ -39,7 +39,8 @@ through a small proxy:
 - **Local dev server**: `node serve.mjs` answers `/adsb/...` by running `proxy/worker.js` itself, so
   it behaves exactly like the deployed Worker. On localhost the feed URL defaults to `/adsb`.
 - **On the phone (GitHub Pages)**: deploy `proxy/worker.js` as a Cloudflare Worker (free plan):
-  1. Cloudflare dashboard → Workers & Pages → Create → Worker → paste `proxy/worker.js` → Deploy.
+  1. Cloudflare dashboard → Workers & Pages → Create → **Start with Hello World!** → Deploy, then
+     **Edit code**, replace it with `proxy/worker.js` → Deploy.
   2. Optional: set `ALLOW_ORIGIN` to your Pages origin, `https://vvlad12.github.io`.
   3. In the app: Settings → Feed URL → `https://<name>.<account>.workers.dev`.
 
@@ -48,10 +49,29 @@ through a small proxy:
   Chrome's `chrome://inspect` → Port forwarding `8001 → localhost:8001`. On the phone,
   `http://localhost:8001` counts as secure, so the camera and sensors work and `/adsb` is proxied.
 
-Workers share their outgoing IP addresses, and adsb.lol often rate-limits them (`429 Too Many
-Requests`). The Worker then asks adsb.fi instead; the `X-Upstream` response header says which feed
-answered. If both refuse, the Worker returns `502` with the reasons, the app shows them and waits
-15 s before trying again. adsb.lol data is under the ODbL licence.
+### Which feed the Worker uses
+
+Workers share their outgoing IP addresses, and the free ADS-B feeds refuse them: adsb.lol answers
+`429 Too Many Requests`, adsb.fi `403`. So the Worker also knows **OpenSky Network**, and converts
+its data to the same format. It tries the feeds in order until one answers; the `X-Upstream`
+response header (and the app's status pill) says which one did. If all refuse, the Worker returns
+`502` with the reasons and the app shows them.
+
+OpenSky needs a free account to be reliable. Anonymous use is 400 requests a day *per IP*, and a
+Cloudflare IP is shared with many other Workers. With an account you get 4000 a day; FlightSpot
+then polls every 10 s, which is 360 an hour of use.
+
+1. Create an account at [opensky-network.org](https://opensky-network.org), then on your
+   **Account** page create an **API client**. Note its client ID and client secret.
+2. In Cloudflare: your Worker → **Settings** → **Variables and Secrets** → **Add**, type
+   **Secret**: `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET`. Deploy.
+   (With Wrangler: `npx wrangler secret put OPENSKY_CLIENT_ID`, same for the secret.)
+3. Check `https://<your-worker>.workers.dev/v2/point/47.45/8.56/40`: the JSON should end with
+   `"source":"opensky"` and the number of credits left.
+
+With credentials set, OpenSky is tried first. To change the order, add a plain variable `FEEDS`,
+e.g. `opensky,adsb.lol,adsb.fi`. OpenSky has no aircraft type or registration, so labels show the
+airline and distance but not the type. OpenSky data is free for non-commercial use.
 
 To deploy from the command line instead of the dashboard: `cd proxy`, `npx wrangler login`,
 `npx wrangler deploy` (uses `proxy/wrangler.toml`).

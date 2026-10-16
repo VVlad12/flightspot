@@ -18,7 +18,7 @@ const TYPES = {
 createServer(async (req, res) => {
   let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   if (path.startsWith('/adsb/')) {
-    const up = await worker.fetch(new Request(`http://worker${path.slice(5)}`));
+    const up = await worker.fetch(new Request(`http://worker${path.slice(5)}`), process.env);
     res.writeHead(up.status, Object.fromEntries(up.headers));
     res.end(Buffer.from(await up.arrayBuffer()));
     return;
