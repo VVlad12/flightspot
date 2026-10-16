@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#111111">
+  <title>FlightSpot</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="scene" hidden></canvas>
+    <canvas id="overlay"></canvas>
+    <div id="crosshair" aria-hidden="true"></div>
+  </div>
+
+  <header id="topbar" hidden>
+    <button id="statusBtn" class="pill">
+      <span id="statusMain">Waiting for traffic…</span>
+      <span id="statusSub" class="muted"></span>
+    </button>
+    <button id="settingsBtn" class="icon-btn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1L11 21h4l.4-2.9a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+    </button>
+  </header>
+
+  <div id="calBanner" class="banner" hidden>
+    <p id="calText"></p>
+    <div class="row">
+      <button id="calCancel" class="btn ghost">Cancel</button>
+      <button id="calSet" class="btn primary">Set</button>
+    </div>
+  </div>
+
+  <div id="sensorWarn" class="banner warn" hidden>
+    <p><b>No orientation readings.</b> The overlay can't follow the phone.
+      In Chrome, tap the icon left of the address → <b>Permissions</b> → allow <b>Motion sensors</b>, then reload.</p>
+    <div class="row"><button id="reloadBtn" class="btn primary">Reload</button></div>
+  </div>
+
+  <div id="feedWarn" class="banner warn" hidden>
+    <p id="feedWarnText"></p>
+    <div class="row">
+      <button id="feedDemoBtn" class="btn ghost">Use simulated traffic</button>
+      <button id="feedSetBtn" class="btn primary">Settings</button>
+    </div>
+  </div>
+
+  <footer id="hud" hidden>
+    <div id="detail" class="card" hidden>
+      <div class="detail-head">
+        <div><b id="dTitle"></b><div id="dSub" class="muted"></div></div>
+        <button id="dClose" class="icon-btn close" aria-label="Close">✕</button>
+      </div>
+      <dl id="dGrid" class="grid"></dl>
+      <div class="row">
+        <button id="dAlign" class="btn small">Align compass on it</button>
+        <a id="dMap" class="btn small ghost" target="_blank" rel="noopener">Track on map</a>
+      </div>
+    </div>
+    <div id="readout" class="readout"></div>
+    <div class="actions">
+      <button id="freezeBtn" class="btn">Freeze</button>
+      <button id="alignBtn" class="btn">Align</button>
+      <button id="rangeBtn" class="btn">40 km</button>
+      <button id="debugBtn" class="btn ghost">Debug</button>
+    </div>
+  </footer>
+
+  <!-- Start screen -->
+  <section id="start" class="screen">
+    <div class="start-card">
+      <svg class="logo" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+        <path d="M10 22V10h12M42 10h12v12M54 42v12H42M22 54H10V42" fill="none" stroke="#6fd0ff" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M32 18c1.6 0 2.4 1.6 2.4 3.4V28l12 7v3.4l-12-3.6v6.6l3.6 2.8V47L32 45.4 26 47v-2.8l3.6-2.8v-6.6l-12 3.6V35l12-7v-6.6C29.6 19.6 30.4 18 32 18z" fill="#fff"/>
+      </svg>
+      <h1>FlightSpot</h1>
+      <p>Point your phone at the sky to see which planes are up there: airline, flight, type and
+        distance, from live ADS-B data.</p>
+      <button id="startBtn" class="btn primary big">Start camera</button>
+      <button id="demoBtn" class="btn ghost big">Demo (simulated traffic)</button>
+      <p class="fine">Uses the camera, compass and location. Your position, rounded to about 1 km,
+        is sent to the flight-data feed to ask for nearby planes.</p>
+    </div>
+  </section>
+
+  <!-- Settings sheet -->
+  <section id="settingsSheet" class="sheet" hidden>
+    <div class="sheet-head"><h2>Settings</h2><button class="icon-btn close" data-close aria-label="Close">✕</button></div>
+
+    <h3>Traffic</h3>
+    <div class="opt"><span>Source</span>
+      <select id="srcIn"><option value="live">Live ADS-B feed</option><option value="sim">Simulated (Zürich)</option></select>
+    </div>
+    <div class="loc one"><label>Feed URL <input id="feedIn" type="url" placeholder="https://your-proxy.workers.dev" spellcheck="false"></label></div>
+    <p class="hint">A readsb-style server with a <code>/v2/point/lat/lon/radius</code> endpoint.
+      The free feeds (adsb.lol, adsb.fi) don't allow calls from a web page, so this goes through a
+      small proxy: <code>/adsb</code> on the local dev server, or the Cloudflare Worker in
+      <code>proxy/worker.js</code> on the phone. See the README.</p>
+    <div class="opt"><span>Max distance <output id="rangeOut"></output></span><input id="rangeIn" type="range" min="5" max="150" step="5"></div>
+    <div class="opt"><span>Show planes on the ground</span><input id="optGround" type="checkbox"></div>
+    <div class="opt"><span>Arrows to planes off screen</span><input id="optArrows" type="checkbox"></div>
+    <div class="opt"><span>Labels</span>
+      <select id="optDetail"><option value="full">Airline, type, distance, altitude</option><option value="short">Airline and distance</option></select>
+    </div>
+    <div class="opt"><span>Altitude in</span>
+      <select id="optUnits"><option value="m">metres</option><option value="ft">feet</option></select>
+    </div>
+
+    <h3>Compass</h3>
+    <div class="loc"><label>Magnetic declination, ° east <input id="declIn" type="number" step="0.1" inputmode="decimal"></label></div>
+    <p id="declInfo" class="hint"></p>
+    <h3>Fine correction <output id="offsetOut"></output></h3>
+    <input id="offsetIn" type="range" min="-45" max="45" step="0.5">
+    <p class="hint">If the boxes sit beside the planes, line up a plane you can see: tap its box, then
+      <b>Align compass on it</b>. On a sunny day, <b>Calibrate with sun</b> works too.</p>
+    <button id="calSunBtn" class="btn">Calibrate with sun</button>
+    <h3>Field of view <output id="fovOut"></output></h3>
+    <input id="fovIn" type="range" min="30" max="100" step="0.5">
+    <p class="hint">Across the long side of the camera image. If you calibrated it in Sun Path, use the same value.</p>
+
+    <h3>Location</h3>
+    <div class="loc three">
+      <label>Lat <input id="latIn" type="number" step="0.0001"></label>
+      <label>Lon <input id="lonIn" type="number" step="0.0001"></label>
+      <label>Height, m <input id="altIn" type="number" step="1" placeholder="GPS"></label>
+    </div>
+    <div class="row">
+      <button id="gpsBtn" class="btn">Use GPS</button>
+      <button id="locApply" class="btn">Apply</button>
+    </div>
+    <p id="locInfo" class="hint"></p>
+
+    <div class="row spaced">
+      <button id="resetBtn" class="btn ghost">Reset corrections</button>
+      <button id="updateBtn" class="btn ghost">Check for update</button>
+    </div>
+    <p class="hint" id="versionInfo"></p>
+  </section>
+
+  <div id="debug" hidden><pre id="debugInfo"></pre><pre id="debugLog"></pre></div>
+  <div id="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
