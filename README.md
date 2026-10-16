@@ -1,10 +1,10 @@
 # FlightSpot
 
-**Live:** https://vvlad12.github.io/flightspot/ (demo: [?demo](https://vvlad12.github.io/flightspot/?demo))
-
-A phone web app (PWA) that labels the planes in the sky on the camera image: a box around each
-plane with the airline, flight number, aircraft type, distance and altitude, from live ADS-B data.
+An Android app that labels the planes in the sky on the camera image: a box around each plane with
+the airline, flight number, aircraft type, distance and altitude, from live ADS-B data.
 It reuses the camera, compass and projection code of [Sun Path](https://github.com/VVlad12/sunpath).
+
+**Web demo** (simulated traffic): https://vvlad12.github.io/flightspot/?demo
 
 - **Box size** shows distance: big when the plane is close, smaller further away, never smaller
   than a tap target. (At true scale an A320 10 km away is only about 3 px wide.)
@@ -30,80 +30,62 @@ and the real positions are drawn as small dark planes with contrails. If the box
 planes, the prediction works. On straight paths the error is a few metres; in turns it grows
 (the circling Cessna is off by about 50–100 m).
 
-## The feed and the proxy
+## Live data: why an Android app
 
-The free feeds ([adsb.lol](https://adsb.lol), [adsb.fi](https://adsb.fi)) don't send CORS headers,
-so a web page can't call them directly. The app calls `{Feed URL}/v2/point/{lat}/{lon}/{radius_nm}`
-through a small proxy:
+Positions come from [adsb.lol](https://adsb.lol), a free community ADS-B network (data under the
+ODbL licence, credited in the app). adsb.lol doesn't send CORS headers, so a web page may not
+read its answers, and proxies on Cloudflare are refused by every free feed (adsb.lol 429,
+adsb.fi 403, OpenSky timeouts). In the Android app, `fetch()` goes through Android's own HTTP
+client (Capacitor's `CapacitorHttp`), which has no CORS rule: the phone calls adsb.lol directly,
+from its own connection.
 
-- **Local dev server**: `node serve.mjs` answers `/adsb/...` by running `proxy/worker.js` itself, so
-  it behaves exactly like the deployed Worker. On localhost the feed URL defaults to `/adsb`.
-- **On the phone (GitHub Pages)**: deploy `proxy/worker.js` as a Cloudflare Worker (free plan):
-  1. Cloudflare dashboard → Workers & Pages → Create → **Start with Hello World!** → Deploy, then
-     **Edit code**, replace it with `proxy/worker.js` → Deploy.
-  2. Optional: set `ALLOW_ORIGIN` to your Pages origin, `https://vvlad12.github.io`.
-  3. In the app: Settings → Feed URL → `https://<name>.<account>.workers.dev`.
+- **Android app**: live traffic from adsb.lol.
+- **Web version** (GitHub Pages): simulated traffic only, with a note saying so.
+- **Local dev server**: `node serve.mjs` passes `/adsb/...` through to adsb.lol, so live data can
+  be tested in a desktop browser.
 
-  The worker forwards only the `/v2/point/...` endpoint, so it can't be used as an open proxy.
-- **Without deploying anything**: plug the phone into the PC with USB, run `node serve.mjs`, and use
-  Chrome's `chrome://inspect` → Port forwarding `8001 → localhost:8001`. On the phone,
-  `http://localhost:8001` counts as secure, so the camera and sensors work and `/adsb` is proxied.
+The same `index.html`, `css/` and `js/` run in all three. Per hour of use the app makes about
+720 requests (one every 5 s) and downloads roughly 5–20 MB, only while it is open. If adsb.lol
+answers 429 (rate-limited), the app waits 15 s and tries again.
 
-### Which feed the Worker uses
+## Installing on the phone
 
-Workers share their outgoing IP addresses, and the free ADS-B feeds refuse them: adsb.lol answers
-`429 Too Many Requests`, adsb.fi `403`. So the Worker also knows **OpenSky Network**, and converts
-its data to the same format. It tries the feeds in order until one answers; the `X-Upstream`
-response header (and the app's status pill) says which one did. If all refuse, the Worker returns
-`502` with the reasons and the app shows them.
-
-OpenSky needs a free account to be reliable. Anonymous use is 400 requests a day *per IP*, and a
-Cloudflare IP is shared with many other Workers. With an account you get 4000 a day; FlightSpot
-then polls every 10 s, which is 360 an hour of use.
-
-1. Create an account at [opensky-network.org](https://opensky-network.org), then on your
-   **Account** page create an **API client**. Note its client ID and client secret.
-2. In Cloudflare: your Worker → **Settings** → **Variables and Secrets** → **Add**, type
-   **Secret**: `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET`. Deploy.
-   (With Wrangler: `npx wrangler secret put OPENSKY_CLIENT_ID`, same for the secret.)
-3. Check `https://<your-worker>.workers.dev/v2/point/47.45/8.56/40`: the JSON should end with
-   `"source":"opensky"` and the number of credits left.
-
-With credentials set, OpenSky is tried first. To change the order, add a plain variable `FEEDS`,
-e.g. `opensky,adsb.lol,adsb.fi`. OpenSky has no aircraft type or registration, so labels show the
-airline and distance but not the type. OpenSky data is free for non-commercial use.
-
-To deploy from the command line instead of the dashboard: `cd proxy`, `npx wrangler login`,
-`npx wrangler deploy` (uses `proxy/wrangler.toml`).
-
-## Using it on the phone
-
-1. Open the app in Chrome, tap **Start camera**, allow camera, location and motion sensors.
-2. **Align the compass** once per session. The phone's compass can be off by 10–20°, which
+1. Copy `android/app/build/outputs/apk/debug/app-debug.apk` to the phone (USB, Drive, email…)
+   and open it. Android asks to allow installing apps from that source the first time.
+2. Open **FlightSpot**, tap **Start camera**, allow the camera and location.
+3. **Align the compass** once per session. The phone's compass can be off by 10–20°, which
    puts the boxes beside the planes. Pick a plane you can clearly see, tap its box, tap
    **Align compass on it**, put the real plane in the centre circle and tap **Set**.
    **Align** in the bottom bar does the same with the box nearest the centre. On a sunny day,
    Settings → **Calibrate with sun** works too.
-3. If you calibrated the field of view in Sun Path, copy that value to Settings → Field of view.
-4. **40 km** cycles the max distance (10 / 20 / 40 / 80 / 150 km). **Freeze** holds the image.
+4. If you calibrated the field of view in Sun Path, copy that value to Settings → Field of view.
+5. **40 km** cycles the max distance (10 / 20 / 40 / 80 / 150 km). **Freeze** holds the image.
 
 ## Desktop demo
 
 Open `?demo` (or tap **Demo**): Zürich city, looking north to the airport, with simulated
 arrivals, departures, overflights and a circling Cessna. Drag or use the arrow keys to look
-around. Settings → Source → **Live ADS-B feed** shows the real traffic around Zürich in the
-same view (on the local dev server).
+around. On the local dev server, Settings → Source → **Live ADS-B feed** shows the real traffic
+around Zürich in the same view.
 
 ## Development
 
-No build step: plain HTML, CSS and ES modules.
+The web app is plain HTML, CSS and ES modules, no build step. The Android app is a Capacitor 6
+wrapper around the same files (Capacitor 6 because it builds with JDK 17).
 
 ```
+npm install              # Capacitor, once
 npm test                 # geometry, feed parsing, prediction, simulator (Node 18+)
-node serve.mjs           # http://localhost:8001, with the /adsb feed proxy
+node serve.mjs           # http://localhost:8001, with the /adsb passthrough
+npm run android:apk      # copy the web app to www/, sync, build the debug APK
 ```
 
-When you change any file, bump `VERSION` in `sw.js` (and `js/app.js`) so installed copies update.
+`npm run android:sync` then opening `android/` in Android Studio also works (Run ▶ installs on a
+connected phone). Needs JDK 17 and the Android SDK (platform 35); `android/local.properties`
+points to the SDK and isn't committed. `node scripts/make-icons.mjs` redraws the web and launcher
+icons.
+
+When you change any file, bump `VERSION` in `sw.js` and `js/app.js` so installed web copies update.
 
 ## Files
 
@@ -117,9 +99,12 @@ When you change any file, bump `VERSION` in `sw.js` (and `js/app.js`) so install
 | `js/airlines.js` | Callsign → airline (ICAO code table), aircraft types and wingspans |
 | `js/sim.js` | Simulated traffic around Zürich for demo mode |
 | `js/render.js` | Boxes, labels, edge arrows, demo sky scene |
-| `js/app.js` | UI, settings, calibration |
-| `proxy/worker.js` | Cloudflare Worker that adds CORS to the feed |
-| `serve.mjs` | Local static server with the `/adsb` proxy |
+| `js/app.js` | UI, settings, calibration, picks the feed (native / dev server / none) |
+| `android/` | Capacitor Android project (permissions: camera, location, internet) |
+| `capacitor.config.json` | App id `ch.dxan.flightspot`, native HTTP on |
+| `scripts/build-www.mjs` | Copies the web app into `www/` for Capacitor |
+| `scripts/make-icons.mjs` | Draws the web and Android icons |
+| `serve.mjs` | Local static server with the `/adsb` passthrough |
 
 ## Known limits
 

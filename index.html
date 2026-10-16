@@ -45,7 +45,6 @@
     <p id="feedWarnText"></p>
     <div class="row">
       <button id="feedDemoBtn" class="btn ghost">Use simulated traffic</button>
-      <button id="feedSetBtn" class="btn primary">Settings</button>
     </div>
   </div>
 
@@ -83,7 +82,7 @@
       <button id="startBtn" class="btn primary big">Start camera</button>
       <button id="demoBtn" class="btn ghost big">Demo (simulated traffic)</button>
       <p class="fine">Uses the camera, compass and location. Your position, rounded to about 1 km,
-        is sent to the flight-data feed to ask for nearby planes.</p>
+        is sent to adsb.lol to ask for nearby planes. Flight data: adsb.lol (ODbL).</p>
     </div>
   </section>
 
@@ -95,11 +94,9 @@
     <div class="opt"><span>Source</span>
       <select id="srcIn"><option value="live">Live ADS-B feed</option><option value="sim">Simulated (Zürich)</option></select>
     </div>
-    <div class="loc one"><label>Feed URL <input id="feedIn" type="url" placeholder="https://your-proxy.workers.dev" spellcheck="false"></label></div>
-    <p class="hint">A readsb-style server with a <code>/v2/point/lat/lon/radius</code> endpoint.
-      The free feeds (adsb.lol, adsb.fi) don't allow calls from a web page, so this goes through a
-      small proxy: <code>/adsb</code> on the local dev server, or the Cloudflare Worker in
-      <code>proxy/worker.js</code> on the phone. See the README.</p>
+    <p class="hint">Live positions come from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>,
+      a free community ADS-B network (data under the ODbL licence). The feed doesn't allow calls from a
+      web page, so live traffic needs the <b>Android app</b>; the web version shows simulated traffic.</p>
     <div class="opt"><span>Max distance <output id="rangeOut"></output></span><input id="rangeIn" type="range" min="5" max="150" step="5"></div>
     <div class="opt"><span>Show planes on the ground</span><input id="optGround" type="checkbox"></div>
     <div class="opt"><span>Arrows to planes off screen</span><input id="optArrows" type="checkbox"></div>

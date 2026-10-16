@@ -7,20 +7,23 @@ import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.1.2';
+export const VERSION = '0.2.0';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 const FALLBACK_LOC = { lat: 47.3769, lon: 8.5417, h: 460, label: 'Zürich (default)' };
 const RANGES = [10, 20, 40, 80, 150];
-const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+// In the Android app (Capacitor) fetch() is native, so adsb.lol can be called directly.
+// A browser may not call it (no CORS), except through the local dev server's /adsb passthrough.
+const isNative = !!window.Capacitor?.isNativePlatform?.();
+const isLocal = !isNative && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const FEED = isNative ? 'https://api.adsb.lol' : isLocal ? '/adsb' : null;
 
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
   headingOffset: 0,       // fine correction, deg
   magDecl: null,          // magnetic declination, deg east; null = automatic
   fovLong: 67,
-  feedUrl: null,          // null = '/adsb' on the local dev server, none elsewhere
   maxRange: 40,           // km
   showGround: false,
   edgeArrows: true,
@@ -38,7 +41,6 @@ function loadSettings() {
 function saveSettings() {
   try { localStorage.setItem('flightspot.settings', JSON.stringify(settings)); } catch { /* private mode */ }
 }
-function feedUrl() { return settings.feedUrl ?? (isLocal ? '/adsb' : ''); }
 
 // ---------------------------------------------------------------- state
 const cam = new Camera();
@@ -91,10 +93,11 @@ function toast(msg, ms = 3200) {
 const traffic = new Traffic(null, log);
 window.flightspot.traffic = traffic;
 function setSource(src) {
+  if (src === 'live' && !FEED) src = 'sim'; // web version: no live feed
   state.source = src;
-  traffic.setFetcher(src === 'sim' ? sim.fetcher() : liveFetcher(feedUrl()));
+  traffic.setFetcher(src === 'sim' ? sim.fetcher() : liveFetcher(FEED));
   $('srcIn').value = src;
-  log(`Traffic source: ${src === 'sim' ? 'simulated' : feedUrl() || '(no feed URL)'}`);
+  log(`Traffic source: ${src === 'sim' ? 'simulated' : FEED}`);
 }
 traffic.where = () => ({ lat: state.loc.lat, lon: state.loc.lon, rangeKm: settings.maxRange + 10 });
 
@@ -257,23 +260,18 @@ function updateSensorWarning() {
 function updateStatus() {
   if (!state.mode) return;
   const n = state.items.length;
-  const src = state.source === 'sim' ? 'simulated' : hostOf(feedUrl()) + (traffic.upstream ? ` → ${traffic.upstream}` : '');
+  const src = state.source === 'sim' ? 'simulated' : 'adsb.lol';
   const ago = traffic.lastOk ? `${Math.round((Date.now() - traffic.lastOk) / 1000)} s ago` : 'no data yet';
   $('statusMain').textContent = traffic.lastOk ? `${n} plane${n === 1 ? '' : 's'} within ${settings.maxRange} km` : 'Waiting for traffic…';
   $('statusSub').textContent = traffic.lastError ? `${src} · ${traffic.lastError}` : `${src} · updated ${ago}`;
   const err = state.source === 'live' && traffic.lastError && !traffic.lastOk;
-  $('feedWarn').hidden = !err || !$('settingsSheet').hidden;
+  const webOnly = state.mode === 'camera' && !FEED && !state.webNoticeClosed;
+  $('feedWarn').hidden = !(err || webOnly) || !$('settingsSheet').hidden;
   if (err) {
-    $('feedWarnText').innerHTML = feedUrl()
-      ? `<b>No traffic from the feed.</b> ${escapeHtml(traffic.lastError)}. Check the feed URL in Settings.`
-      : '<b>No feed URL set.</b> The free ADS-B feeds need a small proxy to be used from a web page. Set its URL in Settings (see the README).';
+    $('feedWarnText').innerHTML = `<b>No traffic from adsb.lol.</b> ${escapeHtml(traffic.lastError)}. Retrying…`;
+  } else if (webOnly) {
+    $('feedWarnText').innerHTML = '<b>Simulated traffic.</b> Live planes need the FlightSpot Android app: the flight-data feed does not allow calls from a web page.';
   }
-}
-
-function hostOf(u) {
-  if (!u) return 'no feed';
-  if (u.startsWith('/')) return `local proxy ${u}`;
-  try { return new URL(u).host; } catch { return u; }
 }
 
 function updateReadout() {
@@ -294,7 +292,7 @@ function updateDebug() {
     `true az ${f.az.toFixed(1)}  = magnetic + decl ${declination().toFixed(1)} + fine ${settings.headingOffset.toFixed(1)}`,
     `fovLong ${cam.fovLong.toFixed(1)}°  f ${cam.f.toFixed(0)} css px  screen ${cam.width}×${cam.height}`,
     `loc ${state.loc?.lat.toFixed(5)}, ${state.loc?.lon.toFixed(5)}  h ${state.loc?.h.toFixed(0)} m (${state.locLabel})`,
-    `feed ${feedUrl() || '–'}  polls ${traffic.polls}  tracked ${traffic.planes.size}  shown ${state.items.length}`,
+    `feed ${FEED || '–'} native=${isNative}  polls ${traffic.polls}  tracked ${traffic.planes.size}  shown ${state.items.length}`,
     `clock offset ${(traffic.clockOffset / 1000).toFixed(1)} s  data age ${ages.length ? `${Math.min(...ages).toFixed(1)}–${Math.max(...ages).toFixed(1)} s` : '–'}`,
     `secure=${window.isSecureContext}  AOS=${'AbsoluteOrientationSensor' in window}`,
   ].join('\n');
@@ -447,8 +445,7 @@ $('debugBtn').onclick = () => {
   $('debugLog').textContent = logLines.join('\n');
 };
 $('statusBtn').onclick = () => { syncSettingsUI(); openSheet('settingsSheet'); };
-$('feedSetBtn').onclick = () => { syncSettingsUI(); openSheet('settingsSheet'); };
-$('feedDemoBtn').onclick = () => setSource('sim');
+$('feedDemoBtn').onclick = () => { state.webNoticeClosed = true; setSource('sim'); };
 
 // ---------------------------------------------------------------- settings sheet
 function closeSheets() { for (const s of document.querySelectorAll('.sheet')) s.hidden = true; }
@@ -458,8 +455,7 @@ $('settingsBtn').onclick = () => { syncSettingsUI(); openSheet('settingsSheet');
 
 function syncSettingsUI() {
   $('srcIn').value = state.source || 'live';
-  $('feedIn').value = settings.feedUrl ?? '';
-  $('feedIn').placeholder = isLocal ? '/adsb (local dev proxy)' : 'https://your-proxy.workers.dev';
+  $('srcIn').querySelector('[value=live]').disabled = !FEED;
   $('rangeIn').value = settings.maxRange;
   $('rangeOut').textContent = `${settings.maxRange} km`;
   $('rangeBtn').textContent = `${settings.maxRange} km`;
@@ -486,12 +482,6 @@ function syncSettingsUI() {
 }
 
 $('srcIn').onchange = (e) => setSource(e.target.value);
-$('feedIn').onchange = (e) => {
-  const v = e.target.value.trim();
-  settings.feedUrl = v === '' ? null : v;
-  saveSettings();
-  if (state.source === 'live') setSource('live');
-};
 $('rangeIn').oninput = (e) => { settings.maxRange = +e.target.value; saveSettings(); syncSettingsUI(); };
 $('optGround').onchange = (e) => { settings.showGround = e.target.checked; saveSettings(); };
 $('optArrows').onchange = (e) => { settings.edgeArrows = e.target.checked; saveSettings(); };
@@ -537,7 +527,7 @@ $('startBtn').onclick = () => start('camera');
 $('demoBtn').onclick = () => start('demo');
 if (new URLSearchParams(location.search).has('demo')) start('demo');
 
-if ('serviceWorker' in navigator && !isLocal) {
+if ('serviceWorker' in navigator && !isLocal && !isNative) {
   navigator.serviceWorker.register('sw.js').catch((err) => log(`SW: ${err.message}`));
 }
 $('reloadBtn').onclick = () => location.reload();

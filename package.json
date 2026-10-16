@@ -1,1 +1,19 @@
-{"type":"module","private":true,"scripts":{"test":"node --test tests/","start":"node serve.mjs"}}
+{
+  "name": "flightspot",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/",
+    "start": "node serve.mjs",
+    "build:www": "node scripts/build-www.mjs",
+    "android:sync": "node scripts/build-www.mjs && npx cap sync android",
+    "android:apk": "node scripts/build-www.mjs && npx cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/core": "^6.2.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.2"
+  }
+}

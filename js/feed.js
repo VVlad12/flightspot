@@ -45,19 +45,14 @@ export function parseResponse(json) {
 /** Fetcher for a readsb-style "point" endpoint: `${base}/v2/point/{lat}/{lon}/{radius_nm}`. */
 export function liveFetcher(base) {
   return async (lat, lon, rangeKm) => {
-    if (!base) throw new Error('No feed URL set (Settings → Traffic).');
     // About 1 km precision is plenty for a 50 km search and keeps the exact location private.
     const nm = Math.min(250, Math.ceil(rangeKm / 1.852));
     const url = `${base.replace(/\/$/, '')}/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/${nm}`;
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) {
-      // The FlightSpot proxy explains failures as {"error": "..."}.
-      const why = await res.json().then((j) => j.error, () => null);
-      throw new Error(why || `Feed HTTP ${res.status}${res.status === 429 ? ' (rate-limited, retrying)' : ''}`);
+      throw new Error(`Feed HTTP ${res.status}${res.status === 429 ? ' (rate-limited)' : ''}`);
     }
-    // The FlightSpot proxy says how often its current feed is worth polling.
-    const interval = +res.headers.get('X-Poll-Interval') || null;
-    return { ...parseResponse(await res.json()), interval, upstream: res.headers.get('X-Upstream') };
+    return parseResponse(await res.json());
   };
 }
 
@@ -69,8 +64,7 @@ export class Traffic {
     this.clockOffset = 0;     // feed clock − local clock, ms
     this.lastOk = 0;          // local time of the last good poll
     this.lastError = null;
-    this.interval = 5000;     // ms, unless the proxy asks for another interval
-    this.upstream = null;     // feed that answered the proxy, if it says
+    this.interval = 5000;
     this.timer = null;
     this.where = null;
     this.polls = 0;
@@ -92,9 +86,7 @@ export class Traffic {
       const { lat, lon, rangeKm } = this.where();
       try {
         const sent = Date.now();
-        const { now, list, interval, upstream } = await this.fetcher(lat, lon, rangeKm);
-        if (interval) wait = Math.max(3000, Math.min(60000, interval * 1000));
-        this.upstream = upstream || null;
+        const { now, list } = await this.fetcher(lat, lon, rangeKm);
         const local = (sent + Date.now()) / 2;
         const off = now - local;
         this.clockOffset = this.polls ? this.clockOffset + (off - this.clockOffset) * 0.3 : off;

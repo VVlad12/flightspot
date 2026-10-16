@@ -1,0 +1,8 @@
+{
+  "appId": "ch.dxan.flightspot",
+  "appName": "FlightSpot",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}
