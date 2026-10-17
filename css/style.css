@@ -209,3 +209,4 @@ input[type=url] {
 }
 code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; }
 .opt output { color: var(--accent); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.readout.warn { border-color: #ff6b5a; background: rgba(90, 20, 14, 0.85); }

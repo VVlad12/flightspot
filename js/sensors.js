@@ -93,3 +93,27 @@ export function watchLocation(onFix, onError = () => {}) {
   );
   return () => navigator.geolocation.clearWatch(id);
 }
+
+/**
+ * Android app only: orientation from the native rotation vector sensor (OrientationPlugin.java),
+ * gyro-stabilised and steady when pointing at the sky. Resolves with a stop function, or null
+ * when not running in the app. onReading(cols, reading) gets the device→world matrix and the raw
+ * reading ({ headingAcc, accuracy }); onLifecycle('pause' | 'resume') follows the app.
+ */
+export async function startNativeOrientation(onReading, onLifecycle, log = () => {}) {
+  const cap = window.Capacitor;
+  if (!cap?.isNativePlatform?.() || !cap.nativePromise) return null;
+  const P = 'NativeOrientation';
+  try {
+    cap.nativeCallback(P, 'addListener', { eventName: 'reading' }, (r) => {
+      if (r && r.w != null) onReading(quatToCols([r.x, r.y, r.z, r.w]), r);
+    });
+    for (const ev of ['pause', 'resume']) cap.nativeCallback(P, 'addListener', { eventName: ev }, () => onLifecycle(ev));
+    const info = await cap.nativePromise(P, 'start', {});
+    log(`Orientation: Android rotation vector (${info.sensor}, ${info.vendor})`);
+    return () => cap.nativePromise(P, 'stop', {});
+  } catch (err) {
+    log(`Native orientation unavailable: ${err.message || err}`);
+    return null;
+  }
+}

@@ -23,7 +23,10 @@ It reuses the camera, compass and projection code of [Sun Path](https://github.c
 3. Geodetic → ECEF → local east/north/up gives the azimuth, elevation and distance. Earth
    curvature is included. Altitude is the GNSS height (`alt_geom`, same reference as the phone's
    GPS) when the plane sends it, else pressure altitude.
-4. The Sun Path camera model projects that direction onto the screen.
+4. The Sun Path camera model projects that direction onto the screen. In the Android app the
+   phone's orientation comes from Android's rotation vector sensor (gyroscope + accelerometer +
+   magnetometer, fused by the system), which stays steady when pointing up at the sky. The
+   WebView's own orientation angles jump around there.
 
 In demo mode (simulated traffic), the boxes are drawn from fake reports that are 1–9 s late,
 and the real positions are drawn as small dark planes with contrails. If the boxes sit on the
@@ -101,6 +104,7 @@ When you change any file, bump `VERSION` in `sw.js` and `js/app.js` so installed
 | `js/render.js` | Boxes, labels, edge arrows, demo sky scene |
 | `js/app.js` | UI, settings, calibration, picks the feed (native / dev server / none) |
 | `android/` | Capacitor Android project (permissions: camera, location, internet) |
+| `android/.../OrientationPlugin.java` | Phone orientation from Android's rotation vector sensor |
 | `capacitor.config.json` | App id `ch.dxan.flightspot`, native HTTP on |
 | `scripts/build-www.mjs` | Copies the web app into `www/` for Capacitor |
 | `scripts/make-icons.mjs` | Draws the web and Android icons |
@@ -108,7 +112,9 @@ When you change any file, bump `VERSION` in `sw.js` and `js/app.js` so installed
 
 ## Known limits
 
-- The compass is the biggest source of error. Without alignment, boxes can be 10–20° off.
+- The compass is the biggest source of error. Without alignment, boxes can be 10–20° off. When
+  Android reports the magnetometer as unreliable, the readout turns red: move the phone in a
+  figure 8 to recalibrate it, away from metal, magnets and phone cases with magnetic clasps.
 - Planes without ADS-B (some military flights, older GA aircraft) don't appear.
   Low planes far away may be missing where receiver coverage is thin.
 - The airline table covers about 120 airlines, mostly European. Unknown codes show as `ABC 123`.

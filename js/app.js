@@ -1,13 +1,13 @@
 import { sunPosition } from './solar.js';
 import { Camera } from './projection.js';
-import { startCamera, startOrientation, watchLocation } from './sensors.js';
+import { startCamera, startOrientation, startNativeOrientation, watchLocation } from './sensors.js';
 import { observer, look } from './geo.js';
 import { Traffic, liveFetcher } from './feed.js';
 import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -123,7 +123,7 @@ async function start(mode) {
 
   if (mode === 'camera') {
     state.lastSensorAt = performance.now() + 1500;
-    startOrientation((m, src) => {
+    const onMatrix = (m, src) => {
       const now = performance.now();
       state.sensorCounts[src] = (state.sensorCounts[src] || 0) + 1;
       if (src === 'AbsoluteOrientationSensor') state.lastAosAt = now;
@@ -131,15 +131,18 @@ async function start(mode) {
       if (state.sensorSource !== src) { state.sensorSource = src; log(`Using readings from ${src}`); }
       state.lastSensorAt = now;
       if (!state.frozen) cam.setSensorMatrix(m);
-    }, log);
-    try {
-      await startCamera(video);
-      const setSize = () => cam.setVideoSize(video.videoWidth, video.videoHeight);
-      video.addEventListener('loadedmetadata', setSize);
-      video.addEventListener('resize', setSize);
-      setSize();
-    } catch (err) {
-      log(`Camera failed: ${err.name}: ${err.message}`);
+    };
+    // In the Android app, the system's gyro-stabilised rotation vector; in a browser, the web APIs.
+    const native = await startNativeOrientation((m, r) => {
+      state.compassAcc = r.accuracy;
+      state.headingAcc = r.headingAcc;
+      onMatrix(m, 'Android rotation vector');
+    }, onLifecycle, log);
+    if (!native) startOrientation(onMatrix, log);
+    const setSize = () => cam.setVideoSize(video.videoWidth, video.videoHeight);
+    video.addEventListener('loadedmetadata', setSize);
+    video.addEventListener('resize', setSize);
+    if (!(await openCamera())) {
       toast('Camera not available, switching to demo mode.');
       return switchToDemo();
     }
@@ -151,6 +154,68 @@ async function start(mode) {
     switchToDemo();
   }
   traffic.start(traffic.where);
+}
+
+// ---------------------------------------------------------------- camera lifecycle
+// Android takes the camera away when the app goes to the background, and the WebView doesn't
+// get it back by itself: release it on pause, reopen it on resume, and reopen it whenever the
+// image stops moving.
+async function openCamera() {
+  try {
+    const stream = await startCamera(video);
+    state.stream = stream;
+    for (const t of stream.getVideoTracks()) {
+      t.addEventListener('ended', () => { if (state.stream === stream) restartCamera('camera track ended'); });
+    }
+    cam.setVideoSize(video.videoWidth, video.videoHeight);
+    state.videoMovedAt = performance.now();
+    return true;
+  } catch (err) {
+    log(`Camera failed: ${err.name}: ${err.message}`);
+    return false;
+  }
+}
+
+function stopCamera() {
+  if (state.stream) for (const t of state.stream.getTracks()) t.stop();
+  state.stream = null;
+}
+
+let cameraBusy = false;
+async function restartCamera(reason) {
+  if (cameraBusy || state.mode !== 'camera' || document.hidden) return;
+  cameraBusy = true;
+  log(`Restarting camera: ${reason}`);
+  stopCamera();
+  const ok = await openCamera();
+  cameraBusy = false;
+  if (!ok) toast('The camera could not restart. Close and reopen FlightSpot.', 5000);
+}
+
+/** App to the background and back (native events and page visibility both land here). */
+function onLifecycle(ev) {
+  if (!state.mode) return;
+  if (ev === 'pause') {
+    traffic.stop();
+    if (state.mode === 'camera') stopCamera();
+    return;
+  }
+  traffic.start(traffic.where);
+  if (state.mode !== 'camera') return;
+  if (state.frozen) setFrozen(false); // the frozen image is gone with the camera
+  if (!state.stream) restartCamera('app resumed');
+}
+document.addEventListener('visibilitychange', () => onLifecycle(document.hidden ? 'pause' : 'resume'));
+
+/** Called every frame: restart the camera if the image has stopped moving for 3 s. */
+function watchCamera(t) {
+  if (state.mode !== 'camera' || state.frozen || !state.stream || document.hidden || cameraBusy) return;
+  if (video.paused) video.play().catch(() => {});
+  if (video.currentTime !== state.lastVideoT) { state.lastVideoT = video.currentTime; state.videoMovedAt = t; return; }
+  if (t - state.videoMovedAt > 3000 && t - (state.lastRestartAt || 0) > 8000) {
+    state.lastRestartAt = t;
+    restartCamera('image stalled');
+  }
 }
 
 function switchToDemo() {
@@ -227,7 +292,7 @@ function frame(t) {
   if (t - fpsT > 1000) { state.fps = frames; frames = 0; fpsT = t; }
   if (state.mode) {
     if (state.manualLook) cam.setYawPitch(state.yaw - cam.headingOffset, state.pitch);
-    if (state.mode === 'camera') updateSensorWarning();
+    if (state.mode === 'camera') { updateSensorWarning(); watchCamera(t); }
     if (!state.frozen) state.items = computeItems();
     if (state.mode === 'demo') {
       // Draw the simulated planes only when the overlay shows simulated traffic.
@@ -278,7 +343,11 @@ function updateReadout() {
   const f = cam.forward();
   const dir = COMPASS16[Math.round(f.az / 22.5) % 16];
   const frozen = state.frozen ? ' · FROZEN' : '';
-  $('readout').textContent = `Facing ${Math.round(f.az)}° ${dir} · elev ${Math.round(f.el)}°${frozen}`;
+  const acc = state.headingAcc >= 0 ? ` ±${Math.round(state.headingAcc)}°` : '';
+  const weak = state.compassAcc != null && state.compassAcc >= 0 && state.compassAcc <= 1;
+  $('readout').textContent = `Facing ${Math.round(f.az)}°${acc} ${dir} · elev ${Math.round(f.el)}°${frozen}` +
+    (weak ? ' · compass weak: move the phone in a figure 8' : '');
+  $('readout').classList.toggle('warn', weak);
 }
 
 function updateDebug() {
@@ -286,7 +355,8 @@ function updateDebug() {
   const ages = state.items.map((i) => i.age);
   $('debugInfo').textContent = [
     `FlightSpot v${VERSION}  mode=${state.mode}  source=${state.source}  fps=${state.fps}`,
-    `orientation: ${state.manualLook ? 'manual drag (demo)' : state.sensorSource || 'NO READINGS'}`,
+    `orientation: ${state.manualLook ? 'manual drag (demo)' : state.sensorSource || 'NO READINGS'}  compass accuracy ${state.compassAcc ?? '–'} (0–3)  heading ±${state.headingAcc >= 0 ? state.headingAcc.toFixed(1) + '°' : '?'}`,
+    `camera ${state.stream ? state.stream.getVideoTracks().map((t) => t.readyState).join(',') : 'off'}  video t=${video.currentTime.toFixed(1)}`,
     `readings: ${Object.entries(state.sensorCounts).map(([k, v]) => `${k}=${v}`).join('  ') || 'none'}`,
     `magnetic az ${m.az.toFixed(1)}  el ${m.el.toFixed(1)}  roll ${cam.roll().toFixed(1)}`,
     `true az ${f.az.toFixed(1)}  = magnetic + decl ${declination().toFixed(1)} + fine ${settings.headingOffset.toFixed(1)}`,
@@ -428,12 +498,14 @@ $('calSet').onclick = setCal;
 $('calCancel').onclick = endCal;
 
 // ---------------------------------------------------------------- buttons
-$('freezeBtn').onclick = () => {
-  state.frozen = !state.frozen;
-  $('freezeBtn').classList.toggle('on', state.frozen);
-  $('freezeBtn').textContent = state.frozen ? 'Live' : 'Freeze';
-  if (state.mode === 'camera') state.frozen ? video.pause() : video.play();
-};
+function setFrozen(on) {
+  state.frozen = on;
+  $('freezeBtn').classList.toggle('on', on);
+  $('freezeBtn').textContent = on ? 'Live' : 'Freeze';
+  if (state.mode === 'camera') on ? video.pause() : video.play().catch(() => {});
+  if (!on) state.videoMovedAt = performance.now();
+}
+$('freezeBtn').onclick = () => setFrozen(!state.frozen);
 $('rangeBtn').onclick = () => {
   const i = RANGES.findIndex((r) => r >= settings.maxRange);
   settings.maxRange = RANGES[(i + 1) % RANGES.length];
