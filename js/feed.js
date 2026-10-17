@@ -25,6 +25,8 @@ export function parseAircraft(a, nowMs) {
     type: a.t || null,
     desc: a.desc || null,
     category: a.category || null,
+    src: a.type || null,       // adsb_icao, mlat, tisb_*, adsr_icao, mode_s, other
+    gsKnown: typeof a.gs === 'number',
     squawk: a.squawk || null,
     lat: a.lat, lon: a.lon, alt, altSrc, ground,
     gs: (a.gs || 0) * KT,
@@ -32,6 +34,32 @@ export function parseAircraft(a, nowMs) {
     vr: ground ? 0 : (rate * FT) / 60,
     t: nowMs - seen * 1000,  // time of the position, feed clock
   };
+}
+
+// Categories that can legitimately fly slowly: rotorcraft, balloons, ultralights, drones.
+const SLOW_FLYERS = new Set(['A7', 'B2', 'B4', 'B6']);
+
+/**
+ * Why a target is probably not flying, or null. Many aircraft keep sending an altitude while
+ * parked or taxiing, and airport vehicles carry transponders (category C*). heightAbove is the
+ * target's height above the observer, m.
+ */
+export function groundReason(ac, heightAbove) {
+  if (ac.ground) return 'reports on ground';
+  if (ac.category && ac.category[0] === 'C') return 'ground vehicle or obstacle';
+  if (ac.gsKnown && ac.gs < 15 && !SLOW_FLYERS.has(ac.category) && heightAbove < 300) return 'too slow to be flying';
+  return null;
+}
+
+/** Readable name of where a position comes from. */
+export function sourceName(src) {
+  if (!src) return 'unknown';
+  if (src.startsWith('adsb')) return 'ADS-B (own GPS)';
+  if (src === 'mlat') return 'MLAT (by receivers, ±100 m+)';
+  if (src.startsWith('tisb')) return 'TIS-B (from radar)';
+  if (src.startsWith('adsr')) return 'ADS-R (rebroadcast)';
+  if (src === 'mode_s') return 'Mode S (no position)';
+  return src;
 }
 
 /** Parse a whole response. `now` is in ms (adsb.lol) or s (adsb.fi). */

@@ -2,12 +2,12 @@ import { sunPosition } from './solar.js';
 import { Camera } from './projection.js';
 import { startCamera, startOrientation, startNativeOrientation, watchLocation } from './sensors.js';
 import { observer, look } from './geo.js';
-import { Traffic, liveFetcher } from './feed.js';
+import { Traffic, liveFetcher, groundReason, sourceName } from './feed.js';
 import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.2.1';
+export const VERSION = '0.2.2';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -105,11 +105,12 @@ function computeItems() {
   if (!state.obs) return [];
   const out = [];
   for (const p of traffic.current()) {
-    if (p.ac.ground && !settings.showGround) continue;
     const h = p.alt ?? state.obs.h;
+    const grounded = groundReason(p.ac, h - state.obs.h);
+    if (grounded && !settings.showGround) continue;
     const l = look(state.obs.toEnu(p.lat, p.lon, h));
     if (l.range > settings.maxRange * 1000 || l.el < -1) continue;
-    out.push({ ac: p.ac, look: l, alt: p.ac.ground ? null : h, age: p.age });
+    out.push({ ac: p.ac, look: l, alt: p.ac.ground ? null : h, above: h - state.obs.h, grounded, age: p.age });
   }
   return out.sort((a, b) => a.look.range - b.look.range);
 }
@@ -117,6 +118,7 @@ function computeItems() {
 // ---------------------------------------------------------------- start
 async function start(mode) {
   state.mode = mode;
+  state.startedAt = performance.now();
   $('start').hidden = true;
   $('topbar').hidden = false;
   $('hud').hidden = false;
@@ -328,7 +330,13 @@ function updateStatus() {
   const src = state.source === 'sim' ? 'simulated' : 'adsb.lol';
   const ago = traffic.lastOk ? `${Math.round((Date.now() - traffic.lastOk) / 1000)} s ago` : 'no data yet';
   $('statusMain').textContent = traffic.lastOk ? `${n} plane${n === 1 ? '' : 's'} within ${settings.maxRange} km` : 'Waiting for traffic…';
-  $('statusSub').textContent = traffic.lastError ? `${src} · ${traffic.lastError}` : `${src} · updated ${ago}`;
+  const gps = /^GPS/.test(state.locLabel);
+  const where = state.mode !== 'camera' ? '' : gps ? ` · ${state.locLabel}` : ` · ⚠ no GPS (${state.locLabel})`;
+  $('statusSub').textContent = (traffic.lastError ? `${src} · ${traffic.lastError}` : `${src} · updated ${ago}`) + where;
+  if (state.mode === 'camera' && !gps && !state.gpsWarned && performance.now() - state.startedAt > 15000) {
+    state.gpsWarned = true;
+    toast(`No GPS fix yet, so the app uses ${state.locLabel === 'saved' ? 'your last saved position' : 'a default position'}. Boxes will be off until GPS works: check that location is on and allowed for FlightSpot.`, 7000);
+  }
   const err = state.source === 'live' && traffic.lastError && !traffic.lastOk;
   const webOnly = state.mode === 'camera' && !FEED && !state.webNoticeClosed;
   $('feedWarn').hidden = !(err || webOnly) || !$('settingsSheet').hidden;
@@ -395,7 +403,10 @@ function updateDetail() {
     ['Elevation', `${l.el.toFixed(1)}°`],
     ['Heading', `${Math.round(ac.track)}°`],
     ['Data age', `${it.age.toFixed(0)} s`],
+    ['Above you', it.alt == null ? '–' : `${it.above >= 0 ? '+' : '−'}${fmtAlt(Math.abs(it.above), settings.units)}`],
+    ['Position', sourceName(ac.src)],
   ];
+  if (it.grounded) rows.push(['On ground?', it.grounded]);
   $('dGrid').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('');
   $('dMap').href = `https://globe.adsb.lol/?icao=${encodeURIComponent(ac.hex)}`;
   $('dMap').hidden = state.source === 'sim';

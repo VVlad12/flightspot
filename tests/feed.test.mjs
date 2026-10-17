@@ -91,3 +91,18 @@ test('simulator: arrivals descend to the runway, feed reports lag behind the tru
   const b = truth.find((x) => x.hex === 'sim006');
   near(groundDistance(a.lat, a.lon, b.lat, b.lon), b.gs * 5, 20, 'reported position is 5 s old');
 });
+
+import { groundReason, sourceName } from '../js/feed.js';
+
+test('targets that cannot be flying are recognised', () => {
+  const base = { ground: false, category: 'A3', gsKnown: true, gs: 70 };
+  assert.equal(groundReason(base, 500), null, 'airliner on approach');
+  assert.equal(groundReason({ ...base, ground: true }, 0), 'reports on ground');
+  assert.equal(groundReason({ ...base, category: 'C1' }, 0), 'ground vehicle or obstacle');
+  assert.equal(groundReason({ ...base, gs: 5 }, 20), 'too slow to be flying', 'taxiing with a baro altitude');
+  assert.equal(groundReason({ ...base, gs: 5 }, 2000), null, 'slow but high: keep (odd data, not ground)');
+  assert.equal(groundReason({ ...base, gs: 2, category: 'A7' }, 50), null, 'hovering helicopter');
+  assert.equal(groundReason({ ...base, gs: 0, gsKnown: false }, 50), null, 'unknown speed: keep');
+  assert.equal(sourceName('mlat'), 'MLAT (by receivers, ±100 m+)');
+  assert.equal(sourceName('adsb_icao'), 'ADS-B (own GPS)');
+});

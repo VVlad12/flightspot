@@ -119,3 +119,6 @@ When you change any file, bump `VERSION` in `sw.js` and `js/app.js` so installed
   Low planes far away may be missing where receiver coverage is thin.
 - The airline table covers about 120 airlines, mostly European. Unknown codes show as `ABC 123`.
 - Hills and buildings aren't modelled: a box can appear for a plane hidden behind a ridge.
+- Targets that can't be flying are hidden: flagged on ground, ground vehicles (category C), or
+  slower than about 30 kt within 300 m of your height (except helicopters, balloons, ultralights).
+  Settings → Show planes on the ground shows them again; tap one to see why it was classed so.
