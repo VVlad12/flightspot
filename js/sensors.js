@@ -89,7 +89,7 @@ export function watchLocation(onFix, onError = () => {}) {
       alt: p.coords.altitude, altAcc: p.coords.altitudeAccuracy,
     }),
     onError,
-    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 } // fresh fixes only: they get averaged
   );
   return () => navigator.geolocation.clearWatch(id);
 }

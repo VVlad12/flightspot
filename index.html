@@ -19,7 +19,7 @@
 
   <header id="topbar" hidden>
     <button id="statusBtn" class="pill">
-      <span id="statusMain">Waiting for traffic…</span>
+      <span class="status-line"><i id="gpsDot" class="dot" hidden></i><span id="statusMain">Waiting for traffic…</span></span>
       <span id="statusSub" class="muted"></span>
     </button>
     <button id="settingsBtn" class="icon-btn" aria-label="Settings">
@@ -51,7 +51,7 @@
   <footer id="hud" hidden>
     <div id="detail" class="card" hidden>
       <div class="detail-head">
-        <div><b id="dTitle"></b><div id="dSub" class="muted"></div></div>
+        <div><b id="dTitle"></b><div id="dRoute" class="route"></div><div id="dSub" class="muted"></div></div>
         <button id="dClose" class="icon-btn close" aria-label="Close">✕</button>
       </div>
       <dl id="dGrid" class="grid"></dl>
@@ -82,7 +82,7 @@
       <button id="startBtn" class="btn primary big">Start camera</button>
       <button id="demoBtn" class="btn ghost big">Demo (simulated traffic)</button>
       <p class="fine">Uses the camera, compass and location. Your position, rounded to about 1 km,
-        is sent to adsb.lol to ask for nearby planes. Flight data: adsb.lol (ODbL).</p>
+        is sent to adsb.lol to ask for nearby planes. Flight data: adsb.lol (ODbL); routes: adsbdb.com.</p>
     </div>
   </section>
 

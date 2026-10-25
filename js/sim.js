@@ -82,7 +82,7 @@ export class Simulator {
         if (groundDistance(lat, lon, p.lat, p.lon) > rangeKm * 1000) continue;
         list.push({
           hex: f.hex, callsign: f.callsign, reg: f.reg, type: f.type, desc: null,
-          category: f.category, squawk: null, ground: false, altSrc: 'gnss',
+          category: f.category, squawk: null, ground: false, altSrc: 'gnss', src: 'adsb_icao', gsKnown: true,
           ...p, t: now - lag * 1000,
         });
       }

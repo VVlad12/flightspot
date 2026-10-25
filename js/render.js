@@ -121,7 +121,9 @@ export class OverlayRenderer {
   drawLabel({ it, box, selected }, placed, opts) {
     const { ctx } = this;
     const km = it.look.range / 1000;
-    const l1 = title(it.ac);
+    // Destination only when the route data fits where the plane actually is.
+    const dest = it.route && it.routeFits ? (opts.detail === 'short' ? it.route.to.iata || it.route.to.city : it.route.to.city) : null;
+    const l1 = dest ? `${title(it.ac)} → ${dest}` : title(it.ac);
     const bits = [];
     if (opts.detail !== 'short') {
       const t = typeName(it.ac.type);

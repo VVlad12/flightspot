@@ -210,3 +210,11 @@ input[type=url] {
 code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; }
 .opt output { color: var(--accent); margin-left: 6px; font-variant-numeric: tabular-nums; }
 .readout.warn { border-color: #ff6b5a; background: rgba(90, 20, 14, 0.85); }
+.status-line { display: flex; align-items: center; gap: 7px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #ff6b5a; }
+.dot.settling { background: var(--accent); animation: blink 1.2s ease-in-out infinite; }
+.dot.stable { background: #4cd964; }
+.dot.manual { background: var(--low); }
+@keyframes blink { 50% { opacity: 0.35; } }
+.route { font-size: 14px; margin: 2px 0 1px; }
+.route.doubtful { color: var(--muted); font-size: 13px; }

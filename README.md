@@ -11,7 +11,15 @@ It reuses the camera, compass and projection code of [Sun Path](https://github.c
 - **Colour**: orange under 5 km, blue under 20 km, white further.
 - **Dashed box**: the last position report is over 20 s old.
 - **Arrows at the edge** point to the nearest planes outside the view.
-- **Tap a box** for details: registration, speed, climb rate, direction, data age.
+- **Tap a box** for details: origin → destination, registration, speed, climb rate, height above
+  you, where the position comes from, data age.
+- **Destination** on the label ("Swiss 14V → New York"), from [adsbdb.com](https://www.adsbdb.com)
+  route data. Routes are schedule data, so each one is checked against where the plane actually
+  is; a route that doesn't fit is left off the label and marked as possibly outdated in the card.
+- **GPS dot** in the status pill: red = no fix (saved or default position), blinking orange =
+  settling, green = stable. Fixes are averaged over the last minute while you stand still, which
+  brings a 20–50 m first fix down to a few metres; walking off restarts the average. Wait for
+  green before aligning the compass.
 
 ## How it works
 
@@ -48,7 +56,8 @@ from its own connection.
   be tested in a desktop browser.
 
 The same `index.html`, `css/` and `js/` run in all three. Per hour of use the app makes about
-720 requests (one every 5 s) and downloads roughly 5–20 MB, only while it is open. If adsb.lol
+720 requests (one every 5 s) and downloads roughly 5–20 MB, only while it is open. Callsigns of
+planes in view are sent to adsbdb.com to look up routes (cached for 6 h). If adsb.lol
 answers 429 (rate-limited), the app waits 15 s and tries again.
 
 ## Installing on the phone
@@ -98,7 +107,9 @@ When you change any file, bump `VERSION` in `sw.js` and `js/app.js` so installed
 | `js/sensors.js` | Camera, orientation, GPS (copied from Sun Path, plus `watchLocation` with altitude) |
 | `js/solar.js` | Sun position, for sun calibration (copied from Sun Path) |
 | `js/geo.js` | WGS84 → ECEF → ENU, look angles, dead reckoning |
-| `js/feed.js` | Feed parsing (readsb JSON), polling, prediction and smoothing |
+| `js/feed.js` | Feed parsing (readsb JSON), polling, prediction and smoothing, ground filter |
+| `js/gps.js` | Averages GPS fixes into a steadier position, settling / stable status |
+| `js/routes.js` | Origin and destination from adsbdb.com, cached, checked against the plane's position |
 | `js/airlines.js` | Callsign → airline (ICAO code table), aircraft types and wingspans |
 | `js/sim.js` | Simulated traffic around Zürich for demo mode |
 | `js/render.js` | Boxes, labels, edge arrows, demo sky scene |

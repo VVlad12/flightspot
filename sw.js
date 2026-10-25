@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION whenever any file changes so phones pick up the update.
-const VERSION = 'flightspot-0.2.2';
+const VERSION = 'flightspot-0.3.0';
 const FILES = [
   './',
   'index.html',
@@ -13,6 +13,8 @@ const FILES = [
   'js/feed.js',
   'js/sim.js',
   'js/airlines.js',
+  'js/gps.js',
+  'js/routes.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

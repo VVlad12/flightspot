@@ -2,12 +2,14 @@ import { sunPosition } from './solar.js';
 import { Camera } from './projection.js';
 import { startCamera, startOrientation, startNativeOrientation, watchLocation } from './sensors.js';
 import { observer, look } from './geo.js';
+import { GpsFilter } from './gps.js';
+import { routeFor, routeFits, airportLabel } from './routes.js';
 import { Traffic, liveFetcher, groundReason, sourceName } from './feed.js';
 import { Simulator } from './sim.js';
 import { AIRLINES, airlineOf, title, typeName } from './airlines.js';
 import { OverlayRenderer, drawDemoScene, fmtAlt } from './render.js';
 
-export const VERSION = '0.2.2';
+export const VERSION = '0.3.0';
 
 const $ = (id) => document.getElementById(id);
 const COMPASS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -49,7 +51,7 @@ const overlay = new OverlayRenderer($('overlay'));
 const video = $('video');
 const sceneCanvas = $('scene');
 const sim = new Simulator();
-window.flightspot = { cam, settings, sim }; // for poking around in the console
+window.flightspot = { cam, settings, sim }; // for poking around in the console (also .overlay, .traffic)
 
 const state = {
   mode: null,            // 'camera' | 'demo'
@@ -92,6 +94,7 @@ function toast(msg, ms = 3200) {
 // ---------------------------------------------------------------- traffic
 const traffic = new Traffic(null, log);
 window.flightspot.traffic = traffic;
+window.flightspot.overlay = overlay;
 function setSource(src) {
   if (src === 'live' && !FEED) src = 'sim'; // web version: no live feed
   state.source = src;
@@ -110,7 +113,11 @@ function computeItems() {
     if (grounded && !settings.showGround) continue;
     const l = look(state.obs.toEnu(p.lat, p.lon, h));
     if (l.range > settings.maxRange * 1000 || l.el < -1) continue;
-    out.push({ ac: p.ac, look: l, alt: p.ac.ground ? null : h, above: h - state.obs.h, grounded, age: p.age });
+    const route = routeFor(p.ac.callsign);
+    out.push({
+      ac: p.ac, look: l, alt: p.ac.ground ? null : h, above: h - state.obs.h, grounded, age: p.age,
+      route, routeFits: !!route && routeFits(route, p.lat, p.lon),
+    });
   }
   return out.sort((a, b) => a.look.range - b.look.range);
 }
@@ -233,13 +240,21 @@ function switchToDemo() {
 }
 
 let stopWatch = null;
+const gps = new GpsFilter();
 function locate() {
   if (stopWatch) stopWatch();
+  gps.reset();
   let first = true;
   stopWatch = watchLocation((p) => {
-    state.gpsAlt = p.alt;
-    setLoc(p.lat, p.lon, `GPS ±${Math.round(p.acc)} m`);
-    settings.loc = { lat: p.lat, lon: p.lon }; saveSettings();
+    const e = gps.add(p);
+    if (e.status === 'stable' && state.gpsStatus !== 'stable') {
+      log(`GPS stable after ${e.n} fixes: ±${e.acc.toFixed(0)} m, altitude ${e.alt == null ? 'n/a' : `${e.alt.toFixed(0)} ±${e.altAcc.toFixed(0)} m`}`);
+    }
+    state.gpsStatus = e.status;
+    state.gpsAlt = e.alt;
+    state.gpsAltAcc = e.altAcc;
+    setLoc(e.lat, e.lon, `GPS ±${Math.round(e.acc)} m`);
+    settings.loc = { lat: e.lat, lon: e.lon }; saveSettings();
     if (first) { log(`GPS fix ±${Math.round(p.acc)} m, altitude ${p.alt == null ? 'n/a' : Math.round(p.alt) + ' m'}`); first = false; }
   }, (err) => {
     log(`Location failed: ${err.message}`);
@@ -331,7 +346,12 @@ function updateStatus() {
   const ago = traffic.lastOk ? `${Math.round((Date.now() - traffic.lastOk) / 1000)} s ago` : 'no data yet';
   $('statusMain').textContent = traffic.lastOk ? `${n} plane${n === 1 ? '' : 's'} within ${settings.maxRange} km` : 'Waiting for traffic…';
   const gps = /^GPS/.test(state.locLabel);
-  const where = state.mode !== 'camera' ? '' : gps ? ` · ${state.locLabel}` : ` · ⚠ no GPS (${state.locLabel})`;
+  const settling = state.gpsStatus === 'settling' ? ' · settling' : '';
+  const where = state.mode !== 'camera' ? '' : gps ? ` · ${state.locLabel}${settling}` : ` · ⚠ no GPS (${state.locLabel})`;
+  const dot = $('gpsDot');
+  dot.hidden = state.mode !== 'camera';
+  dot.className = `dot ${state.gpsStatus || 'none'}`;
+  dot.title = { stable: 'GPS position stable', settling: 'GPS position settling', manual: 'Manual position' }[state.gpsStatus] || 'No GPS fix';
   $('statusSub').textContent = (traffic.lastError ? `${src} · ${traffic.lastError}` : `${src} · updated ${ago}`) + where;
   if (state.mode === 'camera' && !gps && !state.gpsWarned && performance.now() - state.startedAt > 15000) {
     state.gpsWarned = true;
@@ -386,11 +406,16 @@ function updateDetail() {
   if (!it) { detailKey = ''; return; }
   const { ac, look: l } = it;
   // Refresh the text about 4 times a second, not every frame.
-  const key = `${ac.hex}|${Math.round(l.range / 50)}|${Math.round(it.age * 4)}`;
+  const key = `${it.route ? 'r' : it.route === null ? 'n' : 'p'}|${ac.hex}|${Math.round(l.range / 50)}|${Math.round(it.age * 4)}`;
   if (key === detailKey) return;
   detailKey = key;
   const a = airlineOf(ac.callsign);
   $('dTitle').textContent = title(ac);
+  const r = it.route;
+  $('dRoute').hidden = r === null;
+  $('dRoute').textContent = r ? `${airportLabel(r.from)} → ${airportLabel(r.to)}` : r === undefined ? 'Looking up the route…' : '';
+  $('dRoute').classList.toggle('doubtful', !!r && !it.routeFits);
+  if (r && !it.routeFits) $('dRoute').textContent += ' (route data may be outdated: the plane is not on this route)';
   $('dSub').textContent = [a.name ? ac.callsign : (a.code ? 'unknown airline code' : 'private or other flight'),
     ac.desc || typeName(ac.type), ac.reg].filter(Boolean).join(' · ');
   const vr = ac.vr * 196.85; // m/s → ft/min
@@ -585,6 +610,7 @@ $('locApply').onclick = () => {
   settings.altM = alt === '' || isNaN(+alt) ? null : +alt;
   if (stopWatch) { stopWatch(); stopWatch = null; }
   settings.loc = { lat, lon }; saveSettings();
+  state.gpsStatus = 'manual';
   setLoc(lat, lon, 'manual');
   toast('Location updated.');
 };
